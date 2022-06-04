@@ -2,7 +2,7 @@
     package="jp.moongift.ncmb.pushdemo">
    <application
         android:label="pushdemo"
-        android:name="${applicationName}"
+        android:name=".Application"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

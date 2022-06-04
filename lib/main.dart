@@ -1,6 +1,16 @@
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:push/push.dart';
+import 'package:ncmb/ncmb.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
 void main() {
+  NCMB("425e7448a1a92960631490f70cefcd3ca13a05b92d9a6a608044e3442bb26034",
+      "7d6b81affe64be441ba8d7c158ac8fc4886f09974bcd2cfe072c32ccc2602f7c");
   runApp(const MyApp());
 }
 
@@ -48,68 +58,105 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+  String _deviceToken = "未取得";
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  @override
+  void initState() {
+    super.initState();
+    Push.instance.onNotificationTap.listen((data) {
+      // プッシュ通知を開いた場合
+      print('Notification was tapped:\n'
+          'Data: ${data} \n');
+      // tappedNotificationPayloads.value += [data];
     });
+    Push.instance.onNewToken.listen((token) {
+      debugPrint("token $token");
+      setState(() {
+        _deviceToken = token;
+      });
+      saveToken();
+    });
+    Push.instance.notificationTapWhichLaunchedAppFromTerminated.then((data) {
+      if (data == null) {
+        // アプリ起動時
+        debugPrint("App was not launched by tapping a notification");
+      } else {
+        debugPrint('Notification tap launched app from terminated state:\n'
+            'RemoteMessage: ${data} \n');
+      }
+    });
+    Push.instance.onMessage.listen((message) {
+      debugPrint('RemoteMessage received while app is in foreground:\n'
+          'RemoteMessage.Notification: ${message.notification} \n'
+          ' title: ${message.notification?.title.toString()}\n'
+          ' body: ${message.notification?.body.toString()}\n'
+          'RemoteMessage.Data: ${message.data}');
+    });
+    Push.instance.onBackgroundMessage.listen((message) async {
+      debugPrint('RemoteMessage received while app is in background:\n'
+          'RemoteMessage.Notification: ${message.notification} \n'
+          ' title: ${message.notification?.title.toString()}\n'
+          ' body: ${message.notification?.body.toString()}\n'
+          // message.notification.title = message.data['title'] as String;
+
+          'RemoteMessage.Data: ${message.data}');
+      final title = message.data!['title'] as String;
+      final body = message.data!['message'] as String;
+      if (Platform.isAndroid) {
+        const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+            'remote_notification', 'リモート通知',
+            channelDescription: 'リモートの通知です',
+            importance: Importance.max,
+            priority: Priority.high,
+            icon: 'ic_notification',
+            ticker: 'ticker');
+        const NotificationDetails platformChannelSpecifics =
+            NotificationDetails(android: androidPlatformChannelSpecifics);
+        await flutterLocalNotificationsPlugin.show(
+            0, title, body, platformChannelSpecifics,
+            payload: json.encode(message.data));
+      }
+    });
+  }
+
+  void getToken() async {
+    var token = await Push.instance.token;
+    debugPrint("token $token");
+    if (token != null) {
+      setState(() {
+        _deviceToken = token;
+      });
+    }
+  }
+
+  void saveToken() async {
+    try {
+      var installation = NCMBInstallation();
+      installation
+        ..set("badge", 0)
+        ..set("deviceToken", _deviceToken)
+        ..set("deviceType", Platform.isIOS ? "ios" : "android");
+      await installation.save();
+    } catch (e) {
+      debugPrint("エラー ${e.toString()}");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
       ),
       body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Invoke "debug painting" (press "p" in the console, choose the
-          // "Toggle Debug Paint" action from the Flutter Inspector in Android
-          // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-          // to see the wireframe for each widget.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headline4,
-            ),
+            TextButton(onPressed: getToken, child: const Text("プッシュ通知を受け取る")),
+            Text("トークン： $_deviceToken")
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
